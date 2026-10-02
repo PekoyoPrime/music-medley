@@ -1,4 +1,4 @@
-const CONFIG={API_BASE:"https://music-medley-search.tukiyozakura.workers.dev"};
+const CONFIG={API_BASE:"https://medley-search.tukiyoyozakura.workers.dev"};
 const $=s=>document.querySelector(s), esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 const S={playlists:JSON.parse(localStorage.getItem("mm.playlists")||"null")||{"My Playlist":[]},current:localStorage.getItem("mm.current")||"My Playlist",index:+(localStorage.getItem("mm.index")||0),queue:JSON.parse(localStorage.getItem("mm.queue")||"[]"),favorites:new Set(JSON.parse(localStorage.getItem("mm.favorites")||"[]")),history:JSON.parse(localStorage.getItem("mm.history")||"[]"),shuffle:localStorage.getItem("mm.shuffle")==="1",repeat:localStorage.getItem("mm.repeat")==="1",length:+(localStorage.getItem("mm.length")||30),fade:+(localStorage.getItem("mm.fade")||0),now:null,active:"A",preview:null};
 if(!S.playlists[S.current])S.playlists[S.current]=[];
