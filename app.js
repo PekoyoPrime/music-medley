@@ -1,317 +1,42 @@
-const CONFIG = {
-  // Cloudflare Workerをデプロイしたら、ここをWorkerのURLに変更してください。
-  // 例: https://music-medley-search.xxxxx.workers.dev
-  API_BASE: "https://music-medley-search.tukiyoyozakura.workers.dev"
-};
-
-const $ = (s) => document.querySelector(s);
-const audio = $("#audio");
-let playlist = JSON.parse(localStorage.getItem("medleyPlaylist") || "[]");
-let currentIndex = Number(localStorage.getItem("medleyIndex") || 0);
-let shuffle = localStorage.getItem("medleyShuffle") === "1";
-let repeat = localStorage.getItem("medleyRepeat") === "1";
-
-$("#shuffle").checked = shuffle;
-$("#repeat").checked = repeat;
-$("#volume").value = localStorage.getItem("medleyVolume") || "1";
-audio.volume = Number($("#volume").value);
-
-function save() {
-  localStorage.setItem("medleyPlaylist", JSON.stringify(playlist));
-  localStorage.setItem("medleyIndex", String(currentIndex));
-  localStorage.setItem("medleyShuffle", shuffle ? "1" : "0");
-  localStorage.setItem("medleyRepeat", repeat ? "1" : "0");
-}
-
-function timeText(sec) {
-  if (!Number.isFinite(sec)) return "0:00";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
-}
-
-function setStatus(message, type = "") {
-  const el = $("#status");
-  el.textContent = message;
-  el.className = "status " + type;
-}
-
-function renderPlaylist() {
-  $("#count").textContent = `${playlist.length}曲`;
-  $("#empty").style.display = playlist.length ? "none" : "block";
-  $("#playlist").innerHTML = "";
-
-  playlist.forEach((track, i) => {
-    const row = document.createElement("div");
-    row.className = "track" + (i === currentIndex ? " active" : "");
-    row.draggable = true;
-    row.dataset.index = i;
-    row.innerHTML = `
-      <div class="track-number">${i + 1}</div>
-      <img class="thumb" src="${escapeAttr(track.cover || "")}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="track-main">
-        <div class="track-title">${escapeHtml(track.title)}</div>
-        <div class="track-meta">${escapeHtml(track.artist || "")}${track.album ? " · " + escapeHtml(track.album) : ""}</div>
-      </div>
-      <div class="track-actions">
-        <button class="small-button" data-action="up" title="上へ">↑</button>
-        <button class="small-button" data-action="down" title="下へ">↓</button>
-        <button class="small-button" data-action="remove" title="削除">×</button>
-      </div>`;
-    row.addEventListener("click", (e) => {
-      const action = e.target.closest("[data-action]")?.dataset.action;
-      if (action) {
-        e.stopPropagation();
-        if (action === "remove") removeTrack(i);
-        if (action === "up") moveTrack(i, -1);
-        if (action === "down") moveTrack(i, 1);
-        return;
-      }
-      playIndex(i);
-    });
-    row.addEventListener("dragstart", e => {
-      e.dataTransfer.setData("text/plain", String(i));
-    });
-    row.addEventListener("dragover", e => e.preventDefault());
-    row.addEventListener("drop", e => {
-      e.preventDefault();
-      const from = Number(e.dataTransfer.getData("text/plain"));
-      moveTrackTo(from, i);
-    });
-    $("#playlist").appendChild(row);
-  });
-}
-
-function escapeHtml(v) {
-  return String(v ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-}
-function escapeAttr(v) { return escapeHtml(v); }
-
-function addTrack(track) {
-  if (!track.preview) {
-    setStatus("この曲には利用できるプレビュー音源がありません。", "error");
-    return;
-  }
-  if (playlist.some(x => x.id === track.id)) {
-    setStatus("その曲はすでにプレイリストに入っています。", "error");
-    return;
-  }
-  playlist.push(track);
-  if (playlist.length === 1) currentIndex = 0;
-  save();
-  renderPlaylist();
-  setStatus(`「${track.title}」を追加しました。`, "ok");
-}
-
-function removeTrack(i) {
-  const wasCurrent = i === currentIndex;
-  playlist.splice(i, 1);
-  if (!playlist.length) {
-    currentIndex = 0;
-    audio.pause();
-    audio.removeAttribute("src");
-    updateNowPlaying(null);
-  } else if (i < currentIndex) {
-    currentIndex--;
-  } else if (wasCurrent && currentIndex >= playlist.length) {
-    currentIndex = playlist.length - 1;
-  }
-  save();
-  renderPlaylist();
-  if (wasCurrent && playlist.length) playIndex(currentIndex);
-}
-
-function moveTrack(i, delta) { moveTrackTo(i, i + delta); }
-
-function moveTrackTo(from, to) {
-  if (from === to || from < 0 || to < 0 || from >= playlist.length || to >= playlist.length) return;
-  const [item] = playlist.splice(from, 1);
-  playlist.splice(to, 0, item);
-  if (currentIndex === from) currentIndex = to;
-  else if (from < currentIndex && to >= currentIndex) currentIndex--;
-  else if (from > currentIndex && to <= currentIndex) currentIndex++;
-  save();
-  renderPlaylist();
-}
-
-function updateNowPlaying(track) {
-  if (!track) {
-    $("#nowTitle").textContent = "まだ再生していません";
-    $("#nowArtist").textContent = "曲をプレイリストに追加してください";
-    $("#cover").hidden = true;
-    return;
-  }
-  $("#nowTitle").textContent = track.title;
-  $("#nowArtist").textContent = track.artist || "";
-  if (track.cover) {
-    $("#cover").src = track.cover;
-    $("#cover").hidden = false;
-  } else {
-    $("#cover").hidden = true;
-  }
-}
-
-function updateMediaSession(track) {
-  if (!("mediaSession" in navigator) || !track) return;
-  try {
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: track.title,
-      artist: track.artist || "",
-      album: track.album || "Music Medley",
-      artwork: track.cover ? [{ src: track.cover, sizes: "500x500", type: "image/jpeg" }] : []
-    });
-  } catch {}
-}
-
-async function playIndex(i) {
-  if (!playlist.length) return;
-  currentIndex = (i + playlist.length) % playlist.length;
-  const track = playlist[currentIndex];
-  updateNowPlaying(track);
-  updateMediaSession(track);
-  save();
-  renderPlaylist();
-  audio.src = track.preview;
-  try {
-    await audio.play();
-  } catch (e) {
-    setStatus("再生できませんでした。画面上の再生ボタンを押してもう一度試してください。", "error");
-  }
-}
-
-function nextTrack() {
-  if (!playlist.length) return;
-  if (repeat) return playIndex(currentIndex);
-  if (shuffle && playlist.length > 1) {
-    let next;
-    do next = Math.floor(Math.random() * playlist.length); while (next === currentIndex);
-    return playIndex(next);
-  }
-  return playIndex(currentIndex + 1);
-}
-
-function previousTrack() {
-  if (!playlist.length) return;
-  if (audio.currentTime > 3) {
-    audio.currentTime = 0;
-    return;
-  }
-  playIndex(currentIndex - 1);
-}
-
-$("#searchForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const q = $("#query").value.trim();
-  if (!q) return;
-  if (CONFIG.API_BASE === "YOUR_WORKER_URL") {
-    setStatus("先に app.js の YOUR_WORKER_URL を、Cloudflare WorkerのURLに変更してください。", "error");
-    return;
-  }
-
-  $("#searchButton").disabled = true;
-  $("#results").innerHTML = "";
-  setStatus("検索中…");
-
-  try {
-    const url = CONFIG.API_BASE.replace(/\/$/, "") + "/search?q=" + encodeURIComponent(q);
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "検索に失敗しました");
-    const items = (data.data || []).filter(x => x.preview);
-
-    if (!items.length) {
-      setStatus("プレビュー音源が見つかりませんでした。");
-      return;
-    }
-
-    setStatus(`${items.length}件見つかりました。追加したい曲を選んでください。`, "ok");
-    items.slice(0, 12).forEach(track => {
-      const el = document.createElement("div");
-      el.className = "result";
-      el.innerHTML = `
-        <img class="thumb" src="${escapeAttr(track.cover || "")}" alt="" onerror="this.style.visibility='hidden'">
-        <div class="result-main">
-          <div class="result-title">${escapeHtml(track.title)}</div>
-          <div class="result-meta">${escapeHtml(track.artist || "")}${track.album ? " · " + escapeHtml(track.album) : ""}</div>
-        </div>
-        <button class="add-button">追加</button>`;
-      el.querySelector("button").addEventListener("click", () => addTrack(track));
-      $("#results").appendChild(el);
-    });
-  } catch (err) {
-    setStatus("検索に失敗しました: " + err.message, "error");
-  } finally {
-    $("#searchButton").disabled = false;
-  }
-});
-
-$("#playButton").addEventListener("click", async () => {
-  if (!playlist.length) return;
-  if (audio.paused) {
-    if (!audio.src) await playIndex(currentIndex);
-    else await audio.play();
-  } else audio.pause();
-});
-
-$("#prevButton").addEventListener("click", previousTrack);
-$("#nextButton").addEventListener("click", nextTrack);
-
-audio.addEventListener("play", () => { $("#playButton").textContent = "⏸"; });
-audio.addEventListener("pause", () => { $("#playButton").textContent = "▶"; });
-audio.addEventListener("timeupdate", () => {
-  $("#currentTime").textContent = timeText(audio.currentTime);
-  $("#duration").textContent = timeText(audio.duration);
-  $("#seek").value = Number.isFinite(audio.duration) ? (audio.currentTime / audio.duration) * 100 : 0;
-});
-audio.addEventListener("loadedmetadata", () => {
-  $("#duration").textContent = timeText(audio.duration);
-});
-audio.addEventListener("ended", nextTrack);
-audio.addEventListener("error", () => setStatus("音源を再生できませんでした。別の検索結果を試してください。", "error"));
-
-$("#seek").addEventListener("input", () => {
-  if (Number.isFinite(audio.duration)) audio.currentTime = audio.duration * Number($("#seek").value) / 100;
-});
-$("#volume").addEventListener("input", () => {
-  audio.volume = Number($("#volume").value);
-  localStorage.setItem("medleyVolume", $("#volume").value);
-});
-$("#shuffle").addEventListener("change", e => { shuffle = e.target.checked; save(); });
-$("#repeat").addEventListener("change", e => { repeat = e.target.checked; save(); });
-$("#clearButton").addEventListener("click", () => {
-  if (!playlist.length || confirm("プレイリストをすべて削除しますか？")) {
-    playlist = [];
-    currentIndex = 0;
-    audio.pause();
-    audio.removeAttribute("src");
-    updateNowPlaying(null);
-    save();
-    renderPlaylist();
-  }
-});
-
-if ("mediaSession" in navigator) {
-  const actions = {
-    play: () => audio.play(),
-    pause: () => audio.pause(),
-    nexttrack: nextTrack,
-    previoustrack: previousTrack,
-    seekbackward: () => audio.currentTime = Math.max(0, audio.currentTime - 10),
-    seekforward: () => audio.currentTime = Math.min(audio.duration || Infinity, audio.currentTime + 10),
-    seekto: d => { if (d.seekTime != null) audio.currentTime = d.seekTime; }
-  };
-  for (const [name, handler] of Object.entries(actions)) {
-    try { navigator.mediaSession.setActionHandler(name, handler); } catch {}
-  }
-}
-
-if ("audioSession" in navigator) {
-  try { navigator.audioSession.type = "playback"; } catch {}
-}
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
-}
-
-renderPlaylist();
-if (playlist[currentIndex]) updateNowPlaying(playlist[currentIndex]);
+const CONFIG={API_BASE:"https://music-medley-search.tukiyoyozakura.workers.dev/"};
+const $=s=>document.querySelector(s), esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const S={playlists:JSON.parse(localStorage.getItem("mm.playlists")||"null")||{"My Playlist":[]},current:localStorage.getItem("mm.current")||"My Playlist",index:+(localStorage.getItem("mm.index")||0),queue:JSON.parse(localStorage.getItem("mm.queue")||"[]"),favorites:new Set(JSON.parse(localStorage.getItem("mm.favorites")||"[]")),history:JSON.parse(localStorage.getItem("mm.history")||"[]"),shuffle:localStorage.getItem("mm.shuffle")==="1",repeat:localStorage.getItem("mm.repeat")==="1",length:+(localStorage.getItem("mm.length")||30),fade:+(localStorage.getItem("mm.fade")||0),now:null,active:"A",preview:null};
+if(!S.playlists[S.current])S.playlists[S.current]=[];
+const save=()=>{localStorage.setItem("mm.playlists",JSON.stringify(S.playlists));localStorage.setItem("mm.current",S.current);localStorage.setItem("mm.index",S.index);localStorage.setItem("mm.queue",JSON.stringify(S.queue));localStorage.setItem("mm.favorites",JSON.stringify([...S.favorites]));localStorage.setItem("mm.history",JSON.stringify(S.history));localStorage.setItem("mm.shuffle",S.shuffle?1:0);localStorage.setItem("mm.repeat",S.repeat?1:0);localStorage.setItem("mm.length",S.length);localStorage.setItem("mm.fade",S.fade)};
+const list=()=>S.playlists[S.current]||[];const audio=()=>S.active==="A"?$("#audioA"):$("#audioB");const other=()=>S.active==="A"?$("#audioB"):$("#audioA");const ttext=n=>!Number.isFinite(n)?"0:00":`${Math.floor(n/60)}:${String(Math.floor(n%60)).padStart(2,"0")}`;
+function toast(x){const e=$("#toast");e.textContent=x;e.classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove("show"),1800)}
+function status(x,c=""){$("#searchStatus").textContent=x;$("#searchStatus").className="status "+c}
+function addHistory(q){S.history=[q,...S.history.filter(x=>x.toLowerCase()!=q.toLowerCase())].slice(0,20);save()}
+function renderHistory(){const h=$("#history");h.innerHTML="";S.history.forEach(q=>{const b=document.createElement("button");b.className="chip";b.textContent=q;b.onclick=()=>{$("#query").value=q;search(true)};h.appendChild(b)});h.hidden=!S.history.length}
+$("#historyButton").onclick=()=>{renderHistory();$("#history").hidden=!$("#history").hidden};
+function addTrack(t){if(list().some(x=>String(x.id)===String(t.id))){toast("すでに追加されています");return}list().push({...t,start:0,end:30});save();renderPlaylist();toast("プレイリストに追加しました")}
+function toggleFav(t){const id=String(t.id);S.favorites.has(id)?S.favorites.delete(id):S.favorites.add(id);save();renderPlaylist();if(S.now?.id==t.id)$("#fav").textContent=S.favorites.has(id)?"♥":"♡"}
+function openImage(url){if(!url)return;$("#largeCover").src=url;$("#imageModal").hidden=false}
+function renderResult(t){const e=document.createElement("div");e.className="result";e.innerHTML=`<img src="${esc(t.cover||"icon.svg")}" alt="" class="resultcover"><div class="resultmain"><button class="title">${esc(t.title)}</button><button class="artist">${esc(t.artist)}</button><div class="album">${esc(t.album)}</div></div><div class="actions"><button class="preview">▶</button><button class="add">＋追加</button></div><div class="previewrow"><input type="range" min="0" max="30" value="0" step=".1"><span class="previewtime">0:00 / 0:30</span></div>`;e.querySelector(".resultcover").onclick=()=>openImage(t.cover);e.querySelector(".title").onclick=()=>window.open(t.link||"#","_blank","noopener");e.querySelector(".artist").onclick=()=>window.open(t.artistLink||"#","_blank","noopener");e.querySelector(".add").onclick=()=>addTrack(t);const p=e.querySelector(".preview"),r=e.querySelector("input"),tm=e.querySelector(".previewtime");p.onclick=()=>{if(S.preview?.id===String(t.id)){S.preview.audio.paused?S.preview.audio.play():S.preview.audio.pause();return}if(S.preview?.audio)S.preview.audio.pause();const a=new Audio(t.preview);S.preview={id:String(t.id),audio:a,button:p,range:r,time:tm};a.addEventListener("play",()=>p.textContent="⏸");a.addEventListener("pause",()=>p.textContent="▶");a.addEventListener("timeupdate",()=>{r.value=Math.min(30,a.currentTime);tm.textContent=`${ttext(a.currentTime)} / 0:30`;if(a.currentTime>=30)a.pause()});a.play().catch(()=>toast("試聴を開始できませんでした"))};r.oninput=()=>{if(S.preview?.id===String(t.id))S.preview.audio.currentTime=+r.value};$("#results").appendChild(e)}
+let searchQ="",searchIndex=0,hasMore=false;
+async function search(reset){if(CONFIG.API_BASE==="YOUR_WORKER_URL"){status("app.js の YOUR_WORKER_URL をWorker URLに変更してください。","error");return}const q=$("#query").value.trim();if(!q)return;if(reset){searchQ=q;searchIndex=0;$("#results").innerHTML=""}$("#searchButton").disabled=true;$("#moreResults").disabled=true;status("検索中…");try{const r=await fetch(CONFIG.API_BASE.replace(/\/$/,"")+`/search?q=${encodeURIComponent(searchQ)}&index=${searchIndex}&limit=25`),d=await r.json();if(!r.ok)throw Error(d.error||"検索失敗");(d.data||[]).forEach(renderResult);searchIndex+=(d.data||[]).length;hasMore=!!d.next;$("#moreResults").hidden=!hasMore;status(searchIndex?`${searchIndex}件表示中`:`結果がありません`,searchIndex?"ok":"");if(reset)addHistory(q)}catch(e){status("検索に失敗しました: "+e.message,"error")}finally{$("#searchButton").disabled=false;$("#moreResults").disabled=false}}
+$("#searchForm").onsubmit=e=>{e.preventDefault();search(true)};$("#moreResults").onclick=()=>search(false);
+function renderPlaylist(){const l=list();$("#playlistTitle").textContent=S.current;$("#playlist").innerHTML="";$("#playlistEmpty").style.display=l.length?"none":"block";l.forEach((t,i)=>{const e=document.createElement("div");e.className="track"+(S.now?.id===t.id?" active":"");e.innerHTML=`<div class="num">${i+1}</div><img src="${esc(t.cover||"icon.svg")}"><div class="trackmain"><div class="tracktitle">${esc(t.title)}</div><div class="trackartist">${esc(t.artist)}</div></div><div class="trackactions"><button data-a="play">▶</button><button data-a="queue">次へ</button><button data-a="settings">設定</button><button data-a="fav">${S.favorites.has(String(t.id))?"♥":"♡"}</button><button data-a="remove">×</button></div>`;e.onclick=x=>{const a=x.target.closest("button")?.dataset.a;if(!a)return;if(a==="play")playIndex(i);if(a==="queue")S.queue.push({...t}),save(),renderQueue(),toast("次に再生へ追加");if(a==="settings")openSettings(i);if(a==="fav")toggleFav(t);if(a==="remove"){l.splice(i,1);if(S.index>=l.length)S.index=Math.max(0,l.length-1);save();renderPlaylist()}};$("#playlist").appendChild(e)})}
+function renderQueue(){const q=$("#queue");q.innerHTML="";$("#queueEmpty").style.display=S.queue.length?"none":"block";S.queue.forEach((t,i)=>{const e=document.createElement("div");e.className="track";e.innerHTML=`<div class="num">${i+1}</div><img src="${esc(t.cover||"icon.svg")}"><div class="trackmain"><div class="tracktitle">${esc(t.title)}</div><div class="trackartist">${esc(t.artist)}</div></div><div class="trackactions"><button data-a="play">▶</button><button data-a="up">↑</button><button data-a="down">↓</button><button data-a="remove">×</button></div>`;e.onclick=x=>{const a=x.target.closest("button")?.dataset.a;if(a==="play"){const t=S.queue.splice(i,1)[0];save();renderQueue();playTrack(t)}if(a==="remove"){S.queue.splice(i,1);save();renderQueue()}if(a==="up"&&i){[S.queue[i-1],S.queue[i]]=[S.queue[i],S.queue[i-1]];save();renderQueue()}if(a==="down"&&i<S.queue.length-1){[S.queue[i+1],S.queue[i]]=[S.queue[i],S.queue[i+1]];save();renderQueue()}};q.appendChild(e)})}
+$("#clearQueue").onclick=()=>{S.queue=[];save();renderQueue()};
+function updatePlayer(t){S.now=t;$("#playerTitle").textContent=t.title;$("#playerArtist").textContent=t.artist||"—";$("#playerAlbum").textContent=t.album||"—";$("#playerCover").src=t.cover||"icon.svg";$("#fav").textContent=S.favorites.has(String(t.id))?"♥":"♡";if("mediaSession"in navigator)try{navigator.mediaSession.metadata=new MediaMetadata({title:t.title,artist:t.artist||"",album:t.album||"Music Medley",artwork:t.cover?[{src:t.cover,sizes:"500x500",type:"image/jpeg"}]:[]})}catch{}}
+function configure(a,t){a.pause();a.src=t.preview;a.currentTime=Math.max(0,Math.min(30,t.start||0));a.volume=1}
+function playTrack(t){updatePlayer(t);const i=list().findIndex(x=>String(x.id)===String(t.id));if(i>=0)S.index=i;configure(audio(),t);audio().play().catch(()=>toast("再生ボタンを押してください"));save();renderPlaylist()}
+function playIndex(i){const l=list();if(!l.length)return;S.index=(i+l.length)%l.length;playTrack(l[S.index])}
+function nextItem(){if(S.queue.length)return{t:S.queue.shift(),queue:true};const l=list();if(!l.length)return null;if(S.repeat)return{t:S.now||l[S.index],queue:false};if(S.shuffle&&l.length>1){let n;do n=Math.floor(Math.random()*l.length);while(n===S.index);S.index=n}else S.index=(S.index+1)%l.length;return{t:l[S.index],queue:false}}
+function next(){const n=nextItem();if(!n)return;save();renderQueue();playTrack(n.t)}
+function prev(){const a=audio();if(a.currentTime>3){a.currentTime=0;return}playIndex(S.index-1)}
+function endAt(){if(!S.now)return 30;return Math.min(S.length,Number(S.now.end??30))}
+let fading=false;
+function finish(){const a=audio(),end=endAt();if(a.currentTime<end||fading)return;if(S.fade>0){const n=nextItem();if(!n)return;fading=true;const b=other();updatePlayer(n.t);configure(b,n.t);b.volume=0;b.play().catch(()=>{});const start=performance.now(),dur=S.fade*1000;const timer=setInterval(()=>{const p=Math.min(1,(performance.now()-start)/dur);a.volume=1-p;b.volume=p;if(p>=1){clearInterval(timer);a.pause();a.currentTime=0;a.volume=1;S.active=S.active==="A"?"B":"A";fading=false;save();renderPlaylist();renderQueue()}},40)}else{a.pause();a.currentTime=S.now.start||0;next()}}
+function setupAudio(a){a.addEventListener("timeupdate",()=>{if(a!==audio()||!S.now)return;const end=endAt();$("#currentTime").textContent=ttext(a.currentTime);$("#duration").textContent=ttext(end);$("#seek").value=end?Math.min(100,a.currentTime/end*100):0;finish()});a.addEventListener("play",()=>{$("#play").textContent="⏸";if("mediaSession"in navigator)navigator.mediaSession.playbackState="playing"});a.addEventListener("pause",()=>{if(a===audio())$("#play").textContent="▶"});a.addEventListener("ended",()=>{if(a===audio())next()})}setupAudio($("#audioA"));setupAudio($("#audioB"));
+$("#play").onclick=()=>{if(!S.now){playIndex(S.index);return}audio().paused?audio().play():audio().pause()};$("#prev").onclick=prev;$("#next").onclick=next;$("#fav").onclick=()=>S.now&&toggleFav(S.now);$("#seek").oninput=()=>{if(S.now)audio().currentTime=endAt()*+$("#seek").value/100};$("#previewLength").value=S.length;$("#previewLength").onchange=e=>{S.length=+e.target.value;save()};$("#crossfade").value=S.fade;$("#crossfade").onchange=e=>{S.fade=+e.target.value;save()};$("#shuffle").checked=S.shuffle;$("#shuffle").onchange=e=>{S.shuffle=e.target.checked;save()};$("#repeat").checked=S.repeat;$("#repeat").onchange=e=>{S.repeat=e.target.checked;save()};
+function openSettings(i){const t=list()[i];$("#trackName").textContent=`${t.title} / ${t.artist}`;$("#trackStart").value=t.start||0;$("#trackEnd").value=t.end??30;$("#trackModal").hidden=false;$("#saveTrack").onclick=()=>{const s=Math.max(0,+$("#trackStart").value),e=Math.min(30,+$("#trackEnd").value);if(e<=s){toast("終了位置は開始位置より後にしてください");return}t.start=s;t.end=e;save();renderPlaylist();$("#trackModal").hidden=true}};
+$("#expandCover").onclick=()=>S.now&&openImage(S.now.cover);document.addEventListener("click",e=>{const x=e.target.closest("[data-close]");if(x)$("#"+x.dataset.close).hidden=true});
+function renderChoices(){const b=$("#playlistChoices");b.innerHTML="";Object.entries(S.playlists).forEach(([name,l])=>{const e=document.createElement("div");e.className="playlistchoice";e.innerHTML=`<span>${esc(name)} (${l.length}曲)</span><button>切替</button>`;e.querySelector("button").onclick=()=>{S.current=name;S.index=0;save();renderPlaylist();$("#playlistModal").hidden=true};b.appendChild(e)})}
+$("#manage").onclick=()=>{$("#playlistModal").hidden=false;renderChoices()};$("#newPlaylist").onsubmit=e=>{e.preventDefault();const n=$("#newName").value.trim();if(!n||S.playlists[n])return;S.playlists[n]=[];S.current=n;S.index=0;$("#newName").value="";save();renderChoices();renderPlaylist()};
+$("#share").onclick=()=>{const p={name:S.current,tracks:list().map(t=>({id:t.id,start:t.start||0,end:t.end??30}))};const b=btoa(unescape(encodeURIComponent(JSON.stringify(p)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,'');const u=location.origin+location.pathname+"#playlist="+b;navigator.clipboard?.writeText(u).then(()=>toast("共有URLをコピーしました")).catch(()=>prompt("URLをコピーしてください",u))};
+async function loadShare(){const m=location.hash.match(/^#playlist=(.+)$/);if(!m||CONFIG.API_BASE==="YOUR_WORKER_URL")return;try{const p=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,"+").replace(/_/g,"/")+"=="))));const ids=p.tracks.map(x=>x.id).join(",");const r=await fetch(CONFIG.API_BASE.replace(/\/$/,"")+"/tracks?ids="+encodeURIComponent(ids)),d=await r.json();const map=new Map((d.data||[]).map(t=>[String(t.id),t]));S.playlists[p.name||"共有プレイリスト"]=p.tracks.map(x=>({...map.get(String(x.id)),start:x.start,end:x.end})).filter(x=>x.preview);S.current=p.name||"共有プレイリスト";S.index=0;save();renderPlaylist();toast("共有プレイリストを読み込みました")}catch{toast("共有URLを読み込めませんでした")}}
+if("mediaSession"in navigator){const h={play:()=>audio().play(),pause:()=>audio().pause(),nexttrack:next,previoustrack:prev,seekbackward:()=>audio().currentTime=Math.max(0,audio().currentTime-10),seekforward:()=>audio().currentTime=Math.min(endAt(),audio().currentTime+10),seekto:d=>d.seekTime!=null&&(audio().currentTime=d.seekTime)};Object.entries(h).forEach(([k,v])=>{try{navigator.mediaSession.setActionHandler(k,v)}catch{}})}if("audioSession"in navigator)try{navigator.audioSession.type="playback"}catch{}
+$("#themeButton").onclick=()=>{document.documentElement.classList.toggle("light");localStorage.setItem("mm.theme",document.documentElement.classList.contains("light")?"light":"dark")};if(localStorage.getItem("mm.theme")==="light")document.documentElement.classList.add("light");window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();window.mmInstall=e;$("#installButton").hidden=false});$("#installButton").onclick=async()=>{if(window.mmInstall){await window.mmInstall.prompt();window.mmInstall=null;$("#installButton").hidden=true}};
+renderPlaylist();renderQueue();loadShare();if(S.now)updatePlayer(S.now);

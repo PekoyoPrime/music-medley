@@ -1,9 +1,1 @@
-{
-  "name": "Music Medley",
-  "short_name": "Music Medley",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#0b1020",
-  "theme_color": "#111827",
-  "lang": "ja"
-}
+{"name":"Music Medley","short_name":"Music Medley","start_url":"./","scope":"./","display":"standalone","background_color":"#080c16","theme_color":"#111827","lang":"ja","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
