@@ -1,0 +1,9 @@
+{
+  "name": "Music Medley",
+  "short_name": "Medley",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#111827",
+  "description": "Deezerプレビュー音源のメドレープレイヤー"
+}
