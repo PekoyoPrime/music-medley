@@ -1,0 +1,51 @@
+*{box-sizing:border-box}
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;color:#e5e7eb;background:#0b1020}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#18213d 0,#0b1020 48%,#070b15 100%)}
+button,input{font:inherit}
+button{cursor:pointer}
+.app{width:min(900px,100%);margin:auto;padding:28px 18px 60px}
+.hero{padding:18px 2px 26px}
+.eyebrow{font-size:12px;letter-spacing:.16em;color:#93c5fd;margin:0 0 7px}
+h1{font-size:clamp(30px,7vw,52px);margin:0;line-height:1.05}
+h2{margin:0;font-size:20px}
+.sub{color:#aab4c8;margin:10px 0 0;line-height:1.6}
+.panel{background:rgba(17,24,39,.82);border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:0 12px 40px rgba(0,0,0,.18);backdrop-filter:blur(12px)}
+.search-form{display:flex;gap:9px;margin-top:14px}
+.search-form input{flex:1;min-width:0;background:#0b1222;color:#fff;border:1px solid #334155;border-radius:12px;padding:13px 14px;outline:none}
+.search-form input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(96,165,250,.12)}
+.search-form button,.add-button{border:0;border-radius:12px;background:#3b82f6;color:#fff;font-weight:700;padding:0 17px}
+.search-form button:disabled{opacity:.55;cursor:wait}
+.hint,.status{font-size:13px;color:#94a3b8;margin:9px 2px}
+.status.error{color:#fca5a5}.status.ok{color:#86efac}
+.results{display:grid;gap:8px;margin-top:13px}
+.result,.track{display:flex;align-items:center;gap:12px;background:#0c1425;border:1px solid #1e293b;border-radius:14px;padding:10px}
+.thumb{width:58px;height:58px;border-radius:9px;object-fit:cover;background:#1e293b;flex:0 0 auto}
+.result-main,.track-main{min-width:0;flex:1}
+.result-title,.track-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result-meta,.track-meta{color:#94a3b8;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+.add-button{height:40px;flex:0 0 auto}
+.player-panel{padding:20px}
+.now-playing{display:flex;gap:15px;align-items:center;min-height:82px}
+.cover{width:82px;height:82px;border-radius:14px;object-fit:cover;background:#1e293b}
+.now-text{min-width:0}.label{font-size:11px;letter-spacing:.14em;color:#60a5fa;margin-bottom:5px}
+.now-text h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.now-text p{margin:5px 0 0;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress-row{display:flex;align-items:center;gap:9px;margin-top:20px;font-size:12px;color:#94a3b8}
+.progress-row input{flex:1}
+input[type=range]{accent-color:#60a5fa}
+.controls{display:flex;justify-content:center;align-items:center;gap:22px;margin:15px 0}
+.icon-button,.play-button{border:0;color:#fff;background:#1e293b;border-radius:50%;width:48px;height:48px}
+.play-button{width:62px;height:62px;background:#3b82f6;font-size:22px}
+.options{display:flex;justify-content:center;align-items:center;gap:16px;flex-wrap:wrap;color:#aab4c8;font-size:13px}
+.options label{display:flex;align-items:center;gap:6px}
+.volume-wrap input{width:90px}
+.section-head{display:flex;justify-content:space-between;align-items:center}
+.section-head p{margin:4px 0 0;color:#94a3b8;font-size:13px}
+.danger-button{border:1px solid #334155;background:transparent;color:#cbd5e1;border-radius:10px;padding:8px 11px}
+.playlist{display:grid;gap:8px;margin-top:14px}
+.track{cursor:grab}.track.active{border-color:#3b82f6;background:#101c34}
+.track-number{width:24px;text-align:center;color:#64748b;font-size:13px}
+.track-actions{display:flex;gap:5px}.small-button{border:0;background:#1e293b;color:#cbd5e1;border-radius:8px;padding:7px 8px}
+.small-button:hover,.icon-button:hover{background:#334155}
+.empty{text-align:center;color:#64748b;padding:25px 10px;margin:0}
+footer{color:#64748b;text-align:center;font-size:11px;padding-top:5px}
+@media(max-width:560px){.app{padding:18px 12px 40px}.panel{padding:15px;border-radius:16px}.search-form button{padding:0 14px}.result{align-items:center}.result .thumb{width:50px;height:50px}.add-button{padding:0 11px}.options{gap:10px}.track-actions .small-button{padding:6px}.track-number{width:18px}}
